@@ -136,6 +136,76 @@ class ReflexEngineTest(unittest.TestCase):
             ok, messages, _ = reflex_engine.audit_skill_md(target)
             self.assertTrue(ok, messages)
 
+    def test_audit_reads_multiline_folded_description(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_skill(tmp)
+            text = target.read_text(encoding="utf-8")
+            text = text.replace(
+                "description: Demo skill used to test the reflex engine. Use when testing the engine.",
+                "description: >\n  Demo skill used to test the reflex engine.\n  Use when testing the engine.",
+            )
+            target.write_text(text, encoding="utf-8")
+            ok, messages, _ = reflex_engine.audit_skill_md(target)
+            self.assertTrue(ok, messages)
+
+    def test_audit_reads_multiline_literal_description(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_skill(tmp)
+            text = target.read_text(encoding="utf-8")
+            text = text.replace(
+                "description: Demo skill used to test the reflex engine. Use when testing the engine.",
+                "description: |\n  Demo skill used to test the reflex engine.\n  Use when testing the engine.",
+            )
+            target.write_text(text, encoding="utf-8")
+            ok, messages, _ = reflex_engine.audit_skill_md(target)
+            self.assertTrue(ok, messages)
+
+    def test_patch_audits_candidate_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_skill(tmp)
+            original = target.read_text(encoding="utf-8")
+            target.write_text(original + ("\nExtra content.\n" * 490), encoding="utf-8")
+            before = target.read_text(encoding="utf-8")
+            proc = run_engine("patch", str(target), "--rule", VALID_RULE)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertEqual(before, target.read_text(encoding="utf-8"))
+            self.assertFalse(target.with_suffix(".md.bak").exists())
+
+    def test_replace_match_miss_stays_inside_target_section(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_skill(tmp)
+            original = target.read_text(encoding="utf-8")
+            target.write_text(
+                original + "\n## Learned Reflexes\n\n- Existing rule.\n\n## Gotchas\n\nKeep this section after learned rules.\n",
+                encoding="utf-8",
+            )
+            proc = run_engine(
+                "patch", str(target), "--rule", VALID_RULE,
+                "--replace-match", "no matching rule", "--no-backup",
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            text = target.read_text(encoding="utf-8")
+            rule_pos = text.index("**WHEN** rendering 9:16")
+            gotchas_pos = text.index("## Gotchas")
+            self.assertLess(rule_pos, gotchas_pos)
+
+    def test_patch_rejects_rule_accumulation_over_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = make_skill(tmp)
+            lines = [
+                f"- **WHEN** processing input case {index}, **DO** preserve valid output because corruption harms results; "
+                "**VERIFY** by checking the output checksum after processing."
+                for index in range(1, reflex_engine.LEARNED_RULE_LIMIT + 1)
+            ]
+            text = target.read_text(encoding="utf-8")
+            text += "\n## Learned Reflexes\n\n" + "\n".join(lines) + "\n"
+            target.write_text(text, encoding="utf-8")
+            before = target.read_text(encoding="utf-8")
+            proc = run_engine("patch", str(target), "--rule", VALID_RULE, "--no-backup")
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("Consolidate overlapping rules", proc.stdout)
+            self.assertEqual(before, target.read_text(encoding="utf-8"))
+
     def test_audit_rejects_name_directory_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = make_skill(tmp, "demo")

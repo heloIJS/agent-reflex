@@ -28,6 +28,7 @@ SKILL_LINE_LIMIT = 500
 SKILL_WORD_GUIDANCE = 9000
 DESCRIPTION_LIMIT = 1024
 DESCRIPTION_MIN = 20
+LEARNED_RULE_LIMIT = 10
 
 VAGUE_PATTERNS = [
     r"\bbe careful\b",
@@ -154,18 +155,43 @@ def _frontmatter(text: str) -> Optional[str]:
 
 
 def _field(frontmatter: str, name: str) -> Optional[str]:
-    match = re.search(rf"^{re.escape(name)}:\s*(.+?)\s*$", frontmatter, flags=re.MULTILINE)
-    return match.group(1).strip().strip("'\"") if match else None
+    lines = frontmatter.split("\n")
+    for index, line in enumerate(lines):
+        match = re.match(rf"^{re.escape(name)}:\s*(.*?)\s*$", line)
+        if not match:
+            continue
+
+        value = match.group(1).strip()
+        if value in {"|", ">", "|-", ">-", "|+", ">+"}:
+            block: List[str] = []
+            for child in lines[index + 1:]:
+                if child.strip() and not child.startswith((" ", "\t")):
+                    break
+                if child.strip():
+                    block.append(child.strip())
+                elif block:
+                    block.append("")
+            result = "\n".join(block).rstrip()
+            return " ".join(result.split()) if value.startswith(">") else result
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+            if line.lstrip().startswith(name + ": \""):
+                value = value.replace("\\\"", "\"").replace("\\n", "\n")
+            elif line.lstrip().startswith(name + ": '"):
+                value = value.replace("''", "'")
+        return value or None
+    return None
 
 
-def audit_skill_md(path: pathlib.Path) -> Tuple[bool, List[str], Dict[str, object]]:
+def audit_skill_md(path: pathlib.Path, content: Optional[str] = None) -> Tuple[bool, List[str], Dict[str, object]]:
     """Audit a SKILL.md. Returns (ok, messages, stats); warnings are prefixed."""
     errors: List[str] = []
     warnings: List[str] = []
-    if not path.exists():
+    if content is None and not path.exists():
         return False, [f"File not found: {path}"], {}
 
-    text = _read_text(path)
+    text = content if content is not None else _read_text(path)
     lines = text.split("\n")
     fm = _frontmatter(text)
 
@@ -231,14 +257,17 @@ def _find_section_bounds(content: str, section: str) -> Tuple[int, int]:
 def _insert_rule(content: str, section: str, rule: str, replace_match: str = "") -> Tuple[str, str]:
     heading = f"## {section}"
     if replace_match:
+        start, end = _find_section_bounds(content, section)
+        section_content = content[start:end] if start >= 0 else ""
         pattern = re.compile(
-            rf"^(?P<indent>\s*)- .*{re.escape(replace_match)}.*$",
+            rf"^(?P<indent>[ \t]*)- .*{re.escape(replace_match)}.*$",
             flags=re.MULTILINE,
         )
-        match = pattern.search(content)
+        match = pattern.search(section_content)
         if match:
             indent = match.group("indent")
-            return pattern.sub(indent + rule, content, count=1), "replaced"
+            replaced = pattern.sub(indent + rule, section_content, count=1)
+            return content[:start] + replaced + content[end:], "replaced"
 
     if heading not in content:
         return content.rstrip() + f"\n\n{heading}\n\n{rule}\n", "created_section"
@@ -296,20 +325,44 @@ def patch_skill_md(
     after, action_taken = _insert_rule(before, section, rule, replace_match)
     result["action"] = action_taken
 
-    if backup and not dry_run and after != before:
-        shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
+    if action_taken == "already_present":
+        result["audit"] = audit_skill_md(path, content=before)[2]
+        result["audit_messages"] = []
+        return True, [], result
 
-    if not dry_run:
-        _atomic_write(path, after)
+    section_start, section_end = _find_section_bounds(after, section)
+    if section_start >= 0:
+        learned = [
+            line for line in after[section_start:section_end].splitlines()
+            if line.lstrip().startswith("- **WHEN**")
+        ]
+        if len(learned) > LEARNED_RULE_LIMIT:
+            errors = [
+                f"Section '## {section}' has {len(learned)} rules; limit is {LEARNED_RULE_LIMIT}. "
+                "Consolidate overlapping rules before adding another."
+            ]
+            result["errors"] = errors
+            return False, errors, result
 
-    audit_ok, audit_messages, stats = audit_skill_md(path)
+    audit_ok, audit_messages, stats = audit_skill_md(path, content=after)
     result["audit"] = stats
     result["audit_messages"] = audit_messages
-    if dry_run and after != before:
+    if not audit_ok:
+        result["errors"] = audit_messages
+        return False, audit_messages, result
+
+    if dry_run:
         result["diff"] = "\n".join(
             difflib.unified_diff(before.split("\n"), after.split("\n"), fromfile="before", tofile="after", lineterm="")
         )
-    return audit_ok, audit_messages, result
+        return True, audit_messages, result
+
+    if after != before:
+        if backup:
+            shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
+        _atomic_write(path, after)
+
+    return True, audit_messages, result
 
 
 def _add_common_lint_args(parser: argparse.ArgumentParser) -> None:

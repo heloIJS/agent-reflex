@@ -117,6 +117,7 @@ Review the diff, then rerun without `--dry-run`. A `.bak` file is written before
 Apply hygiene:
 
 - Keep the target `SKILL.md` focused; consolidate after roughly 10 learned rules.
+- `reflex_engine.py patch` rejects additions that would exceed 10 `WHEN` bullets in the target section. Consolidate overlapping rules, then retry; the engine does not rewrite or delete rules automatically.
 - Preserve bundled scripts and references when updating multi-file skills.
 - Make a backup or dry run before modifying an existing skill.
 
@@ -162,6 +163,7 @@ Record provisional or final reflexes as one JSON object per line in `assets/refl
 - No duplicate or contradictory rule remains in the target section.
 - The final skill still passes `reflex_engine.py audit`.
 - Reported validation matches what actually ran.
+- Patch operations audit the complete candidate text before writing it to disk.
 
 ## References
 
