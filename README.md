@@ -1,5 +1,7 @@
 # agent-reflex
 
+![Agent Reflex banner](assets/agent-reflex-banner.png)
+
 **Turn agent mistakes into durable, testable skills.**
 
 `agent-reflex` is a small collection of reusable Agent Skills and standard-library Python utilities. It helps coding agents learn from corrections, create well-scoped skills, and audit skill packages before sharing them.
@@ -85,6 +87,7 @@ agent-reflex/
 │   ├── reflex/            # TAV rule workflow and utilities
 │   ├── skill-authoring/   # Authoring workflow and scaffold script
 │   └── skill-audit/       # Audit workflow and validation script
+├── assets/                # Project identity artwork
 ├── scripts/              # Repository validator and security scanner
 ├── tests/                # Unit, negative, edge, and recovery tests
 ├── CONTRIBUTING.md

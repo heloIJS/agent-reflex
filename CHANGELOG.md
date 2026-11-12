@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 — 2026-11-12
+
+- Add the Agent Reflex banner to the repository README.
+- Replace free-form saboteur failure commands with controlled fixture mutations and one argv verifier.
+- Add empty-file and JSON mutations, baseline checks, launch-error reporting, and source-preservation checks.
+- Add tests proving broken verifier commands and mutation-ignoring checks do not pass.
+
 ## 1.0.1 — 2026-11-12
 
 - Parse folded and literal YAML block descriptions in Reflex audits.

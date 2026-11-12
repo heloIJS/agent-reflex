@@ -78,19 +78,20 @@ python3 scripts/reflex_engine.py lint \
   --verify "run ffmpeg -i out.mp4 -af ebur128 -f null - and require integrated loudness between -15 and -13 LUFS"
 ```
 
-If the rule contains an executable check, prove that the check catches failure:
+If a relevant content mutation exists, run the same verifier against a known-good fixture and its mutated copy. The script never accepts a separately invented failure command:
 
 ```bash
 python3 scripts/saboteur_check.py \
-  --pass-cmd "python3 check_loudness.py {target}" \
-  --fail-cmd "python3 check_loudness.py {target}" \
-  --pass-target out.mp4 \
-  --fail-target sabotaged.mp4
+  --target report.json \
+  --mutation truncate-json \
+  --verify-command python3 check_report.py "{target}"
 ```
 
-The valid command must exit `0`; the sabotaged command must exit non-zero. If both pass, the verifier is tautological.
+The baseline must exit `0`; the mutated fixture must exit non-zero. Supported mutations: `empty-file`, `truncate-json`, `invalid-json`, and `json-null-key`. Choose a mutation that represents the defect; catching an irrelevant mutation proves little. The original fixture stays unchanged. The verifier runs as argv without a shell.
 
-On Windows, use `python` instead of `python3`, and use commands that run in `cmd.exe` or PowerShell rather than POSIX-only utilities.
+If no supported mutation represents the failure, report the saboteur check as not run. Do not force a meaningless test; state which domain-specific mutator is missing.
+
+On Windows, use `python` instead of `python3`.
 
 ### 4. Choose the persistence target
 

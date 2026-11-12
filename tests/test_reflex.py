@@ -228,39 +228,106 @@ class ReflexEngineTest(unittest.TestCase):
 
 
 class SaboteurCheckTest(unittest.TestCase):
-    def _checker(self, tmp: str) -> pathlib.Path:
+    def _checker(self, tmp: str, script: str) -> pathlib.Path:
         path = pathlib.Path(tmp) / "check.py"
         path.write_text(
-            "import pathlib, sys\n"
-            "sys.exit(0 if pathlib.Path(sys.argv[1]).stat().st_size > 0 else 1)\n",
+            "import sys\n" + script + "\n",
             encoding="utf-8",
         )
         return path
 
-    def test_genuine_verifier_passes(self) -> None:
+    def test_same_verifier_rejects_empty_file_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            good = pathlib.Path(tmp) / "good.txt"
-            bad = pathlib.Path(tmp) / "bad.txt"
-            good.write_text("valid", encoding="utf-8")
-            bad.write_text("", encoding="utf-8")
-            checker = self._checker(tmp)
-            command = f'"{sys.executable}" "{checker}" {{target}}'
+            target = pathlib.Path(tmp) / "report.txt"
+            target.write_text("valid report", encoding="utf-8")
+            checker = self._checker(
+                tmp,
+                "import pathlib\nsys.exit(0 if pathlib.Path(sys.argv[1]).stat().st_size > 0 else 1)",
+            )
             result = saboteur_check.verify_saboteur(
-                command, command, pass_target=str(good), fail_target=str(bad)
+                [sys.executable, str(checker), "{target}"], target, "empty-file"
             )
             self.assertTrue(result["valid"], result["errors"])
-            self.assertEqual(result["verdict"], "GENUINE_VERIFIER")
+            self.assertEqual(result["verdict"], "MUTATION_CAUGHT")
+            self.assertTrue(result["source_unchanged"])
 
-    def test_tautology_is_rejected(self) -> None:
-        command = f'"{sys.executable}" -c "pass"'
-        result = saboteur_check.verify_saboteur(command, command)
+    def test_verifier_that_ignores_mutation_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp) / "report.txt"
+            target.write_text("valid report", encoding="utf-8")
+            result = saboteur_check.verify_saboteur(
+                [sys.executable, "-c", "pass", "{target}"], target, "empty-file"
+            )
         self.assertFalse(result["valid"])
-        self.assertTrue(any("Tautology" in error for error in result["errors"]))
+        self.assertTrue(any("accepted the mutated" in error for error in result["errors"]))
 
-    def test_target_is_appended_when_template_missing(self) -> None:
-        rendered = saboteur_check.render_command("echo check", "file with space.txt")
-        self.assertIn("file with space.txt", rendered)
-        self.assertTrue(rendered.startswith("echo check "))
+    def test_command_failure_on_baseline_is_not_a_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp) / "report.txt"
+            target.write_text("valid report", encoding="utf-8")
+            result = saboteur_check.verify_saboteur(
+                [str(pathlib.Path(tmp) / "missing-command.exe"), "{target}"], target, "empty-file"
+            )
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("Could not launch baseline" in error for error in result["errors"]))
+
+    def test_truncate_json_mutation_is_caught(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp) / "report.json"
+            target.write_text('{"ok": true, "count": 3}\n', encoding="utf-8")
+            checker = self._checker(
+                tmp,
+                "import json, pathlib\n"
+                "try: json.loads(pathlib.Path(sys.argv[1]).read_text()); sys.exit(0)\n"
+                "except (ValueError, OSError): sys.exit(1)",
+            )
+            result = saboteur_check.verify_saboteur(
+                [sys.executable, str(checker), "{target}"], target, "truncate-json"
+            )
+            self.assertTrue(result["valid"], result["errors"])
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8")), {"ok": True, "count": 3})
+
+    def test_json_null_mutation_rejects_missing_required_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp) / "report.json"
+            target.write_text('{"status": "ready"}\n', encoding="utf-8")
+            checker = self._checker(
+                tmp,
+                "import json, pathlib\n"
+                "data = json.loads(pathlib.Path(sys.argv[1]).read_text())\n"
+                "sys.exit(0 if data.get('status') else 1)",
+            )
+            result = saboteur_check.verify_saboteur(
+                [sys.executable, str(checker), "{target}"], target, "json-null-key", json_key="status"
+            )
+            self.assertTrue(result["valid"], result["errors"])
+
+    def test_mutation_rejects_wrong_fixture_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp) / "report.txt"
+            target.write_text("not JSON", encoding="utf-8")
+            result = saboteur_check.verify_saboteur(
+                [sys.executable, "-c", "pass", "{target}"], target, "truncate-json"
+            )
+            self.assertFalse(result["valid"])
+            self.assertEqual(result["verdict"], "INVALID_TEST")
+
+    def test_cli_accepts_verifier_argv_without_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp) / "report.txt"
+            target.write_text("valid", encoding="utf-8")
+            checker = self._checker(
+                tmp,
+                "import pathlib\nsys.exit(0 if pathlib.Path(sys.argv[1]).stat().st_size else 1)",
+            )
+            script = ROOT / "skills" / "reflex" / "scripts" / "saboteur_check.py"
+            proc = subprocess.run(
+                [sys.executable, str(script), "--target", str(target), "--mutation", "empty-file",
+                 "--verify-command", sys.executable, str(checker), "{target}"],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            self.assertEqual(json.loads(proc.stdout)["verdict"], "MUTATION_CAUGHT")
 
 
 if __name__ == "__main__":
