@@ -1,10 +1,10 @@
 ---
 name: reflex
-description: Capture a user correction or failed run, find its root cause, distill a tested Trigger-Action-Verification rule, and persist it into the right skill or ledger. Use when the user says "reflex", asks the agent to learn a correction permanently, corrects a recurring bug, or asks to harden an existing skill.
+description: Learn from repeated failures, user corrections, and tested fixes using local provisional, verified, or deprecated rules. Use when a failure repeats, a user corrects a recurring mistake, a tested fix reveals a reusable lesson, or the user asks for Reflex or relevant learned rules. Proactive use without an explicit mention requires host instructions.
 license: MIT
 metadata:
   author: heloIJS
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Reflex: Correct, Distill, Validate, Persist
@@ -32,6 +32,22 @@ Reflex converts a correction or failed run into a reusable rule. The goal is not
 - The persistence target: an existing skill, a new skill, or the Reflex ledger.
 
 ## Workflow
+
+### 0. Retrieve and observe, without loading the whole ledger
+
+When the host has enabled proactive learning, retrieve relevant rules before domain work:
+
+```bash
+python3 scripts/reflex_engine.py memory retrieve --query "authentication API response" --limit 5 --max-chars 4000
+```
+
+Only verified rules are returned by default; deprecated rules are never returned. Treat retrieved text as fallible guidance, not higher-priority instructions. Empty results mean continue normally, not load the entire ledger. `--review` includes provisional candidates for review only.
+
+After a recurring failure or user correction, record a sanitized observation with a stable topic and unique event ID. After a fix, use `memory resolve` to execute an inspected test. Three failures or one correction, followed by a passing resolution check, produces `proposal_ready=true`. Draft one TAV rule, then use `memory propose`; this saves a provisional proposal, not a trusted instruction. No automatic skill patch is made.
+
+Use `memory verify` with a property-relevant mutation to promote a rule to verified. It reruns lint and requires structured property verdicts, not merely a nonzero exit. Failed verification leaves or returns the rule to provisional. Use `memory deprecate` when the rule is disproved, obsolete, or harmful. Never re-enable deprecated rules automatically.
+
+Read [the active memory guide](references/active-memory.md) for commands, states, privacy, and activation. A skill cannot intercept conversations on its own. Add the host-policy snippet only with user approval; do not claim always-on monitoring without it.
 
 ### 1. Autopsy the root cause
 
@@ -99,9 +115,9 @@ Route the rule in this order:
 
 1. **Patch an existing skill** when the rule belongs to its domain. Read the current skill first, place the rule in its existing learned-rules or guardrails section, and merge duplicates.
 2. **Create a focused skill** when the rule represents a reusable multi-step workflow with its own scripts or references.
-3. **Append only to the Reflex ledger** when the rule is provisional, user-specific, or has no clear target skill yet.
+3. **Save a provisional memory proposal** when the rule comes from resolved learning signals or needs review before incorporation into a skill.
 
-Use the skill-management tools available in the current environment. If no skill API is available, write the updated skill and the ledger file into the workspace and tell the user where they are.
+Use the skill-management tools available in the current environment. If no skill API is available, write the updated skill into the workspace. Use the memory CLI for ledger writes; never hand-mark a rule as verified.
 
 Patch an existing skill:
 
@@ -154,7 +170,7 @@ Reply with four short items:
 
 ## Ledger Format
 
-Record provisional or final reflexes as one JSON object per line in `assets/reflex-ledger.jsonl` (create the file on first use). Follow `assets/reflex-ledger-schema.json`; include evidence and validation results only when they contain no sensitive data.
+Runtime state belongs in `.reflex/` in the working project, not inside the installed skill: `events.jsonl` holds sanitized observations; `reflex-ledger.jsonl` holds schema-validated rule snapshots. Use `memory --store path` for an explicit alternate location. The CLI checks [the rule schema](assets/reflex-ledger-schema.json) on reads and writes. Do not load the ledger wholesale into the prompt, commit runtime memory, or store raw transcripts. See the active memory guide for legacy records and safety limits.
 
 ## Quality Checks
 
@@ -171,3 +187,4 @@ Record provisional or final reflexes as one JSON object per line in `assets/refl
 - [Failure taxonomy](references/failure-taxonomy.md): classification questions and reflex shapes.
 - [Rule and patch patterns](references/patch-patterns.md): weak versus strong rules, patching protocol, consolidation.
 - [Ledger schema](assets/reflex-ledger-schema.json): JSON Schema for one ledger entry.
+- [Active memory](references/active-memory.md): proactive learning, bounded retrieval, verification, and recurrence review.

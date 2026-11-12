@@ -382,8 +382,13 @@ def _parts_from_args(args: argparse.Namespace) -> RuleParts:
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    if arguments and arguments[0] == "memory":
+        from reflex_memory import main as memory_main
+
+        return memory_main(arguments[1:])
     parser = argparse.ArgumentParser(description="Reflex deterministic rule linter, auditor, and skill patcher.")
-    parser.add_argument("--version", action="version", version="reflex-engine 1.0.0")
+    parser.add_argument("--version", action="version", version="reflex-engine 1.1.0")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_lint = sub.add_parser("lint", help="Lint a TAV reflex rule.")
@@ -399,8 +404,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     p_patch.add_argument("--replace-match", default="", help="Substring of an old rule to replace in place")
     p_patch.add_argument("--dry-run", action="store_true", help="Print the diff without modifying the file")
     p_patch.add_argument("--no-backup", action="store_true", help="Do not create a .bak file before writing")
+    sub.add_parser("memory", help="Observe, propose, verify, deprecate, or retrieve local learning rules")
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
 
     if args.cmd == "lint":
         try:

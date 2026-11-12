@@ -80,6 +80,8 @@ def mutate_file(path: Path, mutation: str, json_key: Optional[str] = None) -> No
             raise ValueError("Mutation 'json-null-key' requires --json-key.")
         if json_key not in value:
             raise ValueError(f"JSON key not found in fixture: {json_key}")
+        if value[json_key] is None:
+            raise ValueError("Selected JSON value is already null; mutation would not change the value.")
         value[json_key] = None
         path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return
@@ -124,6 +126,7 @@ def verify_saboteur(
     *,
     json_key: Optional[str] = None,
     timeout: int = 20,
+    require_verdict: bool = False,
 ) -> Dict[str, Any]:
     """Pass only when the same verifier accepts baseline and rejects mutation."""
     errors: List[str] = []
@@ -169,6 +172,25 @@ def verify_saboteur(
             elif mutated.exit_code == 0:
                 errors.append("Verifier accepted the mutated fixture.")
 
+            if require_verdict:
+                try:
+                    good_verdict = json.loads(baseline.stdout)
+                    bad_verdict = json.loads(mutated.stdout)
+                    if not isinstance(good_verdict, dict) or not isinstance(bad_verdict, dict):
+                        raise ValueError("Verifier verdict must be a JSON object.")
+                    check = good_verdict.get("check")
+                    if not isinstance(check, str) or not check.strip():
+                        raise ValueError("Verifier must name the property in 'check'.")
+                    if good_verdict.get("valid") is not True or baseline.exit_code != 0:
+                        raise ValueError("Baseline needs valid=true and exit 0.")
+                    if (bad_verdict.get("valid") is not False or mutated.exit_code != 1
+                            or bad_verdict.get("check") != check):
+                        raise ValueError("Mutation needs valid=false, the same check, and exit 1.")
+                    if not isinstance(bad_verdict.get("reason"), str) or not bad_verdict["reason"].strip():
+                        raise ValueError("Mutation verdict needs a rejection reason.")
+                except (ValueError, TypeError) as exc:
+                    errors.append(f"Invalid structured verdict: {exc}")
+
             source_unchanged = target.read_bytes() == original_bytes
             if not source_unchanged:
                 errors.append("Verifier modified the original fixture.")
@@ -177,6 +199,7 @@ def verify_saboteur(
                 "valid": not errors,
                 "verdict": "MUTATION_CAUGHT" if not errors else "INVALID_TEST",
                 "mutation": mutation,
+                "structured_verdict": require_verdict and not errors,
                 "source_unchanged": source_unchanged,
                 "baseline": {"command": baseline_command, **baseline.as_dict()},
                 "mutated": {"command": mutated_command, **mutated.as_dict()},
@@ -198,6 +221,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--mutation", required=True, choices=MUTATIONS, help="Controlled content mutation")
     parser.add_argument("--json-key", help="Existing object key for json-null-key mutation")
     parser.add_argument("--timeout", type=int, default=20, help="Timeout in seconds for each verifier run")
+    parser.add_argument("--require-verdict", action="store_true", help="Require JSON property verdicts and explicit rejection exit 1")
     parser.add_argument(
         "--verify-command",
         required=True,
@@ -218,6 +242,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args.mutation,
         json_key=args.json_key,
         timeout=args.timeout,
+        require_verdict=args.require_verdict,
     )
     print(json.dumps(result, indent=2))
     return 0 if result["valid"] else 1

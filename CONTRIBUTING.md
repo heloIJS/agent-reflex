@@ -35,6 +35,8 @@ npx --yes skills@latest add . --list
 
 Inspect all script and shell changes. Do not run commands that download and execute remote code in one step.
 
+For active-memory changes, run the tests in `tests/test_memory.py`. Keep `.reflex/` out of Git and use temporary stores in tests. Include proposal gating, failed verification, retrieval budget, deprecation, and corrupted-state recovery cases. Do not claim a host integration was executed unless the target host actually emitted the observations.
+
 ## Pull Request Checklist
 
 - [ ] Scope and purpose are clear.

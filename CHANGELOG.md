@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 - 2026-11-13
+
+- Add opt-in proactive learning signals with replay-safe event IDs and topic-based proposal gates.
+- Add active local JSONL memory with schema validation, exclusive write locks, and atomic per-file persistence.
+- Add bounded lexical retrieval of relevant verified rules, excluding deprecated lessons.
+- Add provisional, verified, and deprecated states with executed mutation checks, failed-check demotion, and explicit deprecation.
+- Require structured property verdicts for learning verification; runtime errors and exit 2 no longer count as evidence.
+- Track observed recurrences and suggest review/escalation without automatically changing skills or global instructions.
+- Document host-policy activation and limitations; remove the historical example ledger rather than trusting fabricated verification flags.
+
 ## 1.0.2 — 2026-11-12
 
 - Add the Agent Reflex banner to the repository README.

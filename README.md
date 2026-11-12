@@ -9,6 +9,9 @@
 ## Features
 
 - **Reflex**: trace failures to root causes, write Trigger-Action-Verification rules, and persist them safely.
+- **Auto-learn signals**: record repeated failures or corrections, then propose lessons after an executed resolution check.
+- **Selective memory**: retrieve only matching verified rules, with count and character budgets.
+- **Verified learning**: provisional proposals become verified only after live property/mutation tests; deprecated rules stay out of context.
 - **Skill Authoring**: scaffold and write skills with explicit triggers, workflows, outputs, and failure handling.
 - **Skill Audit**: check skill metadata, references, content signals, and suspicious commands.
 - **No runtime dependencies**: bundled Python tools use the standard library.
@@ -18,7 +21,7 @@
 
 | Skill | Purpose | Source |
 | --- | --- | --- |
-| `reflex` | Capture corrections and persist validated, reusable failure-prevention rules. | [SKILL.md](skills/reflex/SKILL.md) |
+| `reflex` | Observe failures and corrections, propose lessons, verify rules, and retrieve relevant memory. | [SKILL.md](skills/reflex/SKILL.md) |
 | `skill-authoring` | Create or revise focused Agent Skills that comply with the specification. | [SKILL.md](skills/skill-authoring/SKILL.md) |
 | `skill-audit` | Audit skill structure, metadata, references, and security risks. | [SKILL.md](skills/skill-audit/SKILL.md) |
 
@@ -72,6 +75,20 @@ python -m unittest discover -s tests -v
 python scripts/security_scan.py
 ```
 
+### Learning without an explicit invocation
+
+Proactive learning requires host instructions. A portable skill cannot monitor conversations by itself, and `npx skills` does not install global hooks. This repository's [AGENTS.md](AGENTS.md) enables the policy for agents working here, if their host loads project instructions. The [active memory guide](skills/reflex/references/active-memory.md) provides an opt-in policy for other projects and a runnable learning example. No personal or global agent policy is changed automatically.
+
+With that policy enabled, the host records sanitized failure/correction signals and runs a relevant resolution test. Three failures or one user correction, followed by a passing resolution check, enable a provisional proposal. The engine does not interpret raw conversations or invent a root cause.
+
+At task start, retrieve a bounded selection instead of reading the full ledger:
+
+```bash
+python skills/reflex/scripts/reflex_engine.py memory retrieve --query "authentication API" --limit 5 --max-chars 4000
+```
+
+Runtime data lives in gitignored `.reflex/`, separate from installed source skills. Default retrieval excludes provisional and deprecated rules. `memory verify` requires an inspected verifier, a fixture, and a relevant mutation; structured property verdicts distinguish rejection from crashes. Verification is scoped evidence, not a universal correctness claim. Use `memory deprecate` to disable a wrong lesson and `memory inspect` to review recurrences.
+
 ## Supported agents
 
 Skills use the open Agent Skills `SKILL.md` format and can be installed by clients supported by the Vercel Labs Skills CLI. The CLI supports OpenCode, Claude Code, Codex, Cursor, and many other clients; the active supported-agent list and installation paths are maintained in the [CLI documentation](https://github.com/vercel-labs/skills/blob/main/docs/agents.md).
@@ -88,6 +105,7 @@ agent-reflex/
 │   ├── skill-authoring/   # Authoring workflow and scaffold script
 │   └── skill-audit/       # Audit workflow and validation script
 ├── assets/                # Project identity artwork
+├── examples/learning/     # Runnable fixture and property verifier
 ├── scripts/              # Repository validator and security scanner
 ├── tests/                # Unit, negative, edge, and recovery tests
 ├── CONTRIBUTING.md
@@ -127,7 +145,7 @@ Use the standalone skill auditor for a focused report:
 python skills/skill-audit/scripts/audit_skill.py skills/reflex --json
 ```
 
-Warnings are visible and may indicate trigger or content risks. `--strict` makes skill-audit warnings fail. The checks do not prove an agent will invoke a skill correctly; test representative requests in the target agent too.
+Warnings are visible and may indicate trigger or content risks. `--strict` makes skill-audit warnings fail. Tests exercise event replay, proposal gates, live verification, failure demotion, deprecation, bounded retrieval, recurrence signals, corrupt storage, and atomic-write failures. The checks do not prove a host will detect every conversation event or invoke a skill correctly; test representative requests in the target agent too.
 
 ## Contributing
 

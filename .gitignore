@@ -18,6 +18,7 @@ npm-debug.log*
 .cursor/skills/
 .opencode/skills/
 skills-lock.json
+.reflex/
 
 # Environment and local tooling
 .env
